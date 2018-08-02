@@ -132,7 +132,7 @@ type NaiveBayes struct {
 	// Words holds a map of words
 	// to their corresponding Word
 	// structure
-	Words concurrentMap `json:"words"`
+	Words ConcurrentMap `json:"words"`
 
 	// Count holds the number of times
 	// class i was seen as Count[i]
@@ -151,16 +151,16 @@ type NaiveBayes struct {
 	// NaiveBayes model's vocabulary
 	DictCount uint64 `json:"vocabulary_size"`
 
+	// tokenizer is used by a model
+	// to split the input into tokens
+	Tokenizer Tokenizer `json:"-"`
+
 	// sanitize is used by a model
 	// to sanitize input of text
 	sanitize transform.Transformer
 
 	// stream holds the datastream
 	stream <-chan base.TextDatapoint
-
-	// tokenizer is used by a model
-	// to split the input into tokens
-	Tokenizer Tokenizer `json:"tokenizer"`
 
 	// Output is the io.Writer used for logging
 	// and printing. Defaults to os.Stdout.
@@ -189,40 +189,35 @@ func (t *SimpleTokenizer) Tokenize(sentence string) []string {
 	return strings.Split(strings.ToLower(sentence), t.SplitOn)
 }
 
-// concurrentMap allows concurrency-friendly map
+// ConcurrentMap allows concurrency-friendly map
 // access via its exported Get and Set methods
-type concurrentMap struct {
+type ConcurrentMap struct {
 	sync.RWMutex
-	words map[string]Word
+	Words map[string]Word
 }
 
-func (m *concurrentMap) MarshalJSON() ([]byte, error) {
-	return json.Marshal(m.words)
+func (m *ConcurrentMap) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.Words)
 }
 
-func (m *concurrentMap) UnmarshalJSON(data []byte) error {
-	err := json.Unmarshal(data, &m.words)
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (m *ConcurrentMap) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &m.Words)
 }
 
 // Get looks up a word from h's Word map and should be used
 // in place of a direct map lookup. The only caveat is that
 // it will always return the 'success' boolean
-func (m *concurrentMap) Get(w string) (Word, bool) {
+func (m *ConcurrentMap) Get(w string) (Word, bool) {
 	m.RLock()
-	result, ok := m.words[w]
+	result, ok := m.Words[w]
 	m.RUnlock()
 	return result, ok
 }
 
 // Set sets word k's value to v in h's Word map
-func (m *concurrentMap) Set(k string, v Word) {
+func (m *ConcurrentMap) Set(k string, v Word) {
 	m.Lock()
-	m.words[k] = v
+	m.Words[k] = v
 	m.Unlock()
 }
 
@@ -258,7 +253,7 @@ type Word struct {
 // comply with the transform.RemoveFunc interface
 func NewNaiveBayes(stream <-chan base.TextDatapoint, classes uint8, sanitize func(rune) bool) *NaiveBayes {
 	return &NaiveBayes{
-		Words:         concurrentMap{sync.RWMutex{}, make(map[string]Word)},
+		Words:         ConcurrentMap{Words: make(map[string]Word)},
 		Count:         make([]uint64, classes),
 		Probabilities: make([]float64, classes),
 
@@ -408,7 +403,6 @@ func (b *NaiveBayes) OnlineLearn(errors chan<- error) {
 				}
 
 				w, ok := b.Words.Get(word)
-
 				if !ok {
 					w = Word{
 						Count: make([]uint64, len(b.Count)),
